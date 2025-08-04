@@ -70,7 +70,7 @@ Retrieval (testing) data in many new tasks: `git clone https://huggingface.co/da
 
 Both of the above can also be found at [this huggingface link](https://huggingface.co/ricl-vla).
 
-## Preprocessing
+## Preprocessing [SKIP this step if you downloaded the above datasets from HF]
 * First cd into the folder
 ```bash
 cd preprocessing
@@ -88,7 +88,7 @@ python process_collected_demos.py --dir_of_dirs=collected_demos
 ```
 
 ## Re-training for in-context learning (RICL)
-* Compute norm stats after processing the priming demos as follows:
+* Compute norm stats after processing the priming demos as follows **[SKIP this step if you downloaded the above datasets from HF]**:
 ```bash
 python scripts/setup_norm_states_for_ricl.py
 ```
