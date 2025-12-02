@@ -12,9 +12,9 @@ import tqdm
 import tyro
 import yaml
 
-from libero.libero import benchmark
-from libero.libero import get_libero_path
-from libero.libero.envs import OffScreenRenderEnv
+from libero_pro.libero.libero import benchmark
+from libero_pro.libero.libero import get_libero_path
+from libero_pro.libero.libero.envs import OffScreenRenderEnv
 
 from openpi_client import image_tools
 from openpi_client import websocket_client_policy as _websocket_client_policy
