@@ -12,9 +12,9 @@ import tqdm
 import tyro
 import yaml
 
-from libero_pro.libero.libero import benchmark
-from libero_pro.libero.libero import get_libero_path
-from libero_pro.libero.libero.envs import OffScreenRenderEnv
+from libero.libero import benchmark
+from libero.libero import get_libero_path
+from libero.libero.envs import OffScreenRenderEnv
 
 from openpi_client import image_tools
 from openpi_client import websocket_client_policy as _websocket_client_policy
@@ -313,6 +313,9 @@ def eval_libero(args: Args) -> None:
                     if not action_plan:
                         # Finished executing previous action chunk -- compute new chunk
                         element = {
+                            "query_top_image": img,
+                            "query_right_image": img,
+                            "query_wrist_image": wrist_img,
                             "observation/image": img,
                             "observation/wrist_image": wrist_img,
                             "observation/state": np.concatenate(
