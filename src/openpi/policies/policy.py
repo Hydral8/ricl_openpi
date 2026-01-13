@@ -99,6 +99,11 @@ class RiclPolicy(BasePolicy):
         use_action_interpolation: bool | None = None,
         lamda: float | None = None,
         action_horizon: int | None = None,
+        # New parameters for LeRobot-based retrieval
+        lerobot_dataset_dir: str | None = None,
+        lerobot_text_index_path: str | None = None,
+        lerobot_image_index_path: str | None = None,
+        use_lerobot_retrieval: bool = False,
     ):
         self._sample_actions = nnx_utils.module_jit(model.sample_actions)
         self._input_transform = _transforms.compose(transforms)
@@ -110,56 +115,105 @@ class RiclPolicy(BasePolicy):
         self._use_action_interpolation = use_action_interpolation
         self._lamda = lamda
         self._action_horizon = action_horizon
-        # setup demos for retrieval
-        print()
-        logger.info(f'loading demos from {demos_dir}...')
-        self._demos = {demo_idx: np.load(f"{demos_dir}/{folder}/processed_demo.npz") for demo_idx, folder in enumerate(os.listdir(demos_dir)) if os.path.isdir(f"{demos_dir}/{folder}")}
-        self._all_indices = np.array([(ep_idx, step_idx) for ep_idx in list(self._demos.keys()) for step_idx in range(self._demos[ep_idx]["actions"].shape[0])])
-        _all_embeddings = np.concatenate([self._demos[ep_idx]["top_image_embeddings"] for ep_idx in list(self._demos.keys())])
-        assert _all_embeddings.shape == (len(self._all_indices), EMBED_DIM), f"{_all_embeddings.shape=}"
         self._knn_k = self._model.num_retrieved_observations
-        print()
-        logger.info(f'building retrieval index...')
-        self._knn_index, knn_index_infos = build_index(embeddings=_all_embeddings, # Note: embeddings have to be float to avoid errors in autofaiss / embedding_reader!
-                                            save_on_disk=False,
-                                            min_nearest_neighbors_to_retrieve=self._knn_k + 5, # default: 20
-                                            max_index_query_time_ms=10, # default: 10
-                                            max_index_memory_usage="25G", # default: "16G"
-                                            current_memory_available="50G", # default: "32G"
-                                            metric_type='l2',
-                                            nb_cores=8, # default: None # "The number of cores to use, by default will use all cores" as seen in https://criteo.github.io/autofaiss/getting_started/quantization.html#the-build-index-command
-                                            )
-        # setup the dinov2 model for embedding only
-        logger.info('loading dinov2 for image embedding...')
-        self._dinov2 = load_dinov2()
-        self._max_dist = json.load(open(f"assets/max_distance.json", 'r'))['distances']['max']
-        print(f'self._max_dist: {self._max_dist} [helpful to carefully check this value in case of any issues]')
+        
+        # Determine which retrieval method to use
+        self._use_lerobot_retrieval = use_lerobot_retrieval
+        if use_lerobot_retrieval:
+            if not all([lerobot_dataset_dir, lerobot_text_index_path, lerobot_image_index_path]):
+                raise ValueError(
+                    "When use_lerobot_retrieval=True, must provide "
+                    "lerobot_dataset_dir, lerobot_text_index_path, and lerobot_image_index_path"
+                )
+            # Initialize LeRobot retriever
+            logger.info(f'Initializing LeRobot retriever with dataset: {lerobot_dataset_dir}')
+            try:
+                from rar_client.base import init_lerobot_retriever
+                from openpi.policies.lerobot_retrieval_bridge import lerobot_retrieve_for_ricl
+                
+                self._retriever_handle = init_lerobot_retriever(
+                    dataset_dir=lerobot_dataset_dir,
+                    text_index_path=lerobot_text_index_path,
+                    image_index_path=lerobot_image_index_path,
+                )
+                self._lerobot_retrieve_fn = lerobot_retrieve_for_ricl
+                logger.info('LeRobot retriever initialized successfully')
+            except ImportError as e:
+                raise ImportError(
+                    f"Failed to import rar_client. Install the SDK package: {e}"
+                ) from e
+            # Load max_dist from assets (same as old method)
+            try:
+                self._max_dist = json.load(open("assets/max_distance.json", 'r'))['distances']['max']
+            except (FileNotFoundError, KeyError):
+                logger.warning("Could not load max_distance.json, using default max_dist=1.0")
+                self._max_dist = 1.0
+            print(f'self._max_dist: {self._max_dist} [helpful to carefully check this value in case of any issues]')
+        else:
+            # Old method: load from .npz files
+            if demos_dir is None:
+                raise ValueError("Either use_lerobot_retrieval=True with LeRobot paths, or provide demos_dir")
+            print()
+            logger.info(f'loading demos from {demos_dir}...')
+            self._demos = {demo_idx: np.load(f"{demos_dir}/{folder}/processed_demo.npz") for demo_idx, folder in enumerate(os.listdir(demos_dir)) if os.path.isdir(f"{demos_dir}/{folder}")}
+            self._all_indices = np.array([(ep_idx, step_idx) for ep_idx in list(self._demos.keys()) for step_idx in range(self._demos[ep_idx]["actions"].shape[0])])
+            _all_embeddings = np.concatenate([self._demos[ep_idx]["top_image_embeddings"] for ep_idx in list(self._demos.keys())])
+            assert _all_embeddings.shape == (len(self._all_indices), EMBED_DIM), f"{_all_embeddings.shape=}"
+            print()
+            logger.info(f'building retrieval index...')
+            self._knn_index, knn_index_infos = build_index(embeddings=_all_embeddings, # Note: embeddings have to be float to avoid errors in autofaiss / embedding_reader!
+                                                save_on_disk=False,
+                                                min_nearest_neighbors_to_retrieve=self._knn_k + 5, # default: 20
+                                                max_index_query_time_ms=10, # default: 10
+                                                max_index_memory_usage="25G", # default: "16G"
+                                                current_memory_available="50G", # default: "32G"
+                                                metric_type='l2',
+                                                nb_cores=8, # default: None # "The number of cores to use, by default will use all cores" as seen in https://criteo.github.io/autofaiss/getting_started/quantization.html#the-build-index-command
+                                                )
+            # setup the dinov2 model for embedding only
+            logger.info('loading dinov2 for image embedding...')
+            self._dinov2 = load_dinov2()
+            self._max_dist = json.load(open(f"assets/max_distance.json", 'r'))['distances']['max']
+            print(f'self._max_dist: {self._max_dist} [helpful to carefully check this value in case of any issues]')
 
     def retrieve(self, obs: dict) -> dict:
-        more_obs = {"inference_time": True}
-        # embed
-        query_embedding = embed(obs["query_top_image"], self._dinov2)
-        assert query_embedding.shape == (1, EMBED_DIM), f"{query_embedding.shape=}"
-        # retrieve
-        topk_distance, topk_indices = self._knn_index.search(query_embedding, self._knn_k)
-        retrieved_indices = self._all_indices[topk_indices]
-        assert retrieved_indices.shape == (1, self._knn_k, 2), f"{retrieved_indices.shape=}"
-        # collect retrieved info
-        for ct, (ep_idx, step_idx) in enumerate(retrieved_indices[0]):
-            for key in ["state", "wrist_image", "top_image", "right_image"]:
-                more_obs[f"retrieved_{ct}_{key}"] = self._demos[ep_idx][key][step_idx]
-            more_obs[f"retrieved_{ct}_actions"] = get_action_chunk_at_inference_time(self._demos[ep_idx]["actions"], step_idx, self._action_horizon)
-            more_obs[f"retrieved_{ct}_prompt"] = self._demos[ep_idx]["prompt"].item()
-        # Compute exp_lamda_distances if use_action_interpolation
-        if self._use_action_interpolation:
-            first_embedding = self._demos[retrieved_indices[0, 0, 0]]["top_image_embeddings"][retrieved_indices[0, 0, 1]]
-            distances = [0.0] + [np.linalg.norm(self._demos[ep_idx]["top_image_embeddings"][step_idx:step_idx+1] - first_embedding) for ep_idx, step_idx in retrieved_indices[0, 1:]]
-            distances.append(np.linalg.norm(query_embedding - first_embedding))
-            distances = np.clip(np.array(distances), 0, self._max_dist) / self._max_dist
-            print(f'distances: {distances}')
-            more_obs["exp_lamda_distances"] = np.exp(-self._lamda * distances).reshape(-1, 1)
-            print(f'exp_lamda_distances: {more_obs["exp_lamda_distances"]}')
-        return {**obs, **more_obs}
+        if self._use_lerobot_retrieval:
+            # New LeRobot-based retrieval
+            return self._lerobot_retrieve_fn(
+                query_obs=obs,
+                handle=self._retriever_handle,
+                knn_k=self._knn_k,
+                action_horizon=self._action_horizon,
+                lamda=self._lamda if self._use_action_interpolation else 0.0,
+                max_dist=self._max_dist,
+                use_text_retrieval=False,  # Can be made configurable
+            )
+        else:
+            # Old .npz-based retrieval (backward compatibility)
+            more_obs = {"inference_time": True}
+            # embed
+            query_embedding = embed(obs["query_top_image"], self._dinov2)
+            assert query_embedding.shape == (1, EMBED_DIM), f"{query_embedding.shape=}"
+            # retrieve
+            topk_distance, topk_indices = self._knn_index.search(query_embedding, self._knn_k)
+            retrieved_indices = self._all_indices[topk_indices]
+            assert retrieved_indices.shape == (1, self._knn_k, 2), f"{retrieved_indices.shape=}"
+            # collect retrieved info
+            for ct, (ep_idx, step_idx) in enumerate(retrieved_indices[0]):
+                for key in ["state", "wrist_image", "top_image", "right_image"]:
+                    more_obs[f"retrieved_{ct}_{key}"] = self._demos[ep_idx][key][step_idx]
+                more_obs[f"retrieved_{ct}_actions"] = get_action_chunk_at_inference_time(self._demos[ep_idx]["actions"], step_idx, self._action_horizon)
+                more_obs[f"retrieved_{ct}_prompt"] = self._demos[ep_idx]["prompt"].item()
+            # Compute exp_lamda_distances if use_action_interpolation
+            if self._use_action_interpolation:
+                first_embedding = self._demos[retrieved_indices[0, 0, 0]]["top_image_embeddings"][retrieved_indices[0, 0, 1]]
+                distances = [0.0] + [np.linalg.norm(self._demos[ep_idx]["top_image_embeddings"][step_idx:step_idx+1] - first_embedding) for ep_idx, step_idx in retrieved_indices[0, 1:]]
+                distances.append(np.linalg.norm(query_embedding - first_embedding))
+                distances = np.clip(np.array(distances), 0, self._max_dist) / self._max_dist
+                print(f'distances: {distances}')
+                more_obs["exp_lamda_distances"] = np.exp(-self._lamda * distances).reshape(-1, 1)
+                print(f'exp_lamda_distances: {more_obs["exp_lamda_distances"]}')
+            return {**obs, **more_obs}
     
     def save_obs(self, obs: dict, date: str, prefix: str):
         fol = f"obs_logs/{date}/{prefix}"

@@ -29,7 +29,13 @@ class Checkpoint:
     # Checkpoint directory (e.g., "checkpoints/pi0_aloha_sim/exp/10000").
     dir: str
     # Demos directory (e.g., "ricl_droid_preprocessing/collected_demos/2025-03-04").
-    demos_dir: str
+    # Optional if using LeRobot retrieval.
+    demos_dir: str | None = None
+    # LeRobot retrieval parameters
+    use_lerobot_retrieval: bool = False
+    lerobot_dataset_dir: str | None = None
+    lerobot_text_index_path: str | None = None
+    lerobot_image_index_path: str | None = None
 
 
 @dataclasses.dataclass
@@ -59,9 +65,19 @@ class Args:
 
 def create_policy(args: Args) -> _policy.Policy:
     """Create a policy from the given arguments."""
-    return _policy_config.create_trained_ricl_policy(
-        _config.get_config(args.policy.config), args.policy.dir, demos_dir=args.policy.demos_dir
-    )
+    if isinstance(args.policy, Checkpoint):
+        return _policy_config.create_trained_ricl_policy(
+            _config.get_config(args.policy.config),
+            args.policy.dir,
+            demos_dir=args.policy.demos_dir,
+            use_lerobot_retrieval=args.policy.use_lerobot_retrieval,
+            lerobot_dataset_dir=args.policy.lerobot_dataset_dir,
+            lerobot_text_index_path=args.policy.lerobot_text_index_path,
+            lerobot_image_index_path=args.policy.lerobot_image_index_path,
+        )
+    else:
+        # Default policy (not implemented for RICL)
+        raise ValueError("Default policy not supported for RICL")
 
 
 def main(args: Args) -> None:

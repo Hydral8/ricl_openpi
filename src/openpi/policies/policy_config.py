@@ -87,17 +87,26 @@ def create_trained_policy(
 def create_trained_ricl_policy(
     train_config: _config.TrainConfig,
     checkpoint_dir: str,
-    demos_dir: str,
+    demos_dir: str | None = None,
     norm_stats: dict[str, transforms.NormStats] | None = None,
+    # LeRobot retrieval parameters
+    use_lerobot_retrieval: bool = False,
+    lerobot_dataset_dir: str | None = None,
+    lerobot_text_index_path: str | None = None,
+    lerobot_image_index_path: str | None = None,
 ) -> _policy.RiclPolicy:
     """Create a ricl policy from a trained checkpoint.
 
     Args:
         train_config: The training config to use to create the model.
         checkpoint_dir: The directory to load the model from.
-        demos_dir: The directory to load the demos from.
+        demos_dir: The directory to load the demos from (for old .npz method).
         norm_stats: The norm stats to use for the policy. If not provided, the norm stats will be loaded
             from the checkpoint directory.
+        use_lerobot_retrieval: Whether to use LeRobot-based retrieval.
+        lerobot_dataset_dir: Path to LeRobot dataset directory.
+        lerobot_text_index_path: Path to text FAISS index.
+        lerobot_image_index_path: Path to image FAISS index.
     """
     logging.info("Loading model...")
     model = train_config.model.load(_model.restore_params(f"{checkpoint_dir}/params", dtype=jnp.bfloat16))
@@ -127,4 +136,9 @@ def create_trained_ricl_policy(
         use_action_interpolation=train_config.model.use_action_interpolation,
         lamda=train_config.model.lamda,
         action_horizon=train_config.model.action_horizon,
+        # LeRobot retrieval parameters
+        use_lerobot_retrieval=use_lerobot_retrieval,
+        lerobot_dataset_dir=lerobot_dataset_dir,
+        lerobot_text_index_path=lerobot_text_index_path,
+        lerobot_image_index_path=lerobot_image_index_path,
     )
