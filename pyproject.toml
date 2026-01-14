@@ -258,6 +258,7 @@ dependencies = [
     "yarl>=1.18.3",
     "zipp>=3.21.0",
     "rar-client",
+    "libero"
 ]
 
 
@@ -279,9 +280,12 @@ dev = [
 [tool.uv.sources]
 openpi-client = { workspace = true }
 rar-client = { path = "../../sdk", editable = true }
+libero = { path = "third_party/libero", editable = true }
 
 [tool.uv.workspace]
-members = ["packages/*"]
+members = [
+    "packages/*"
+]
 
 [tool.ruff]
 line-length = 120

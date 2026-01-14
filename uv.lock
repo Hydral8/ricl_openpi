@@ -1998,6 +1998,11 @@ wheels = [
 ]
 
 [[package]]
+name = "libero"
+version = "0.1.0"
+source = { editable = "third_party/libero" }
+
+[[package]]
 name = "llvmlite"
 version = "0.46.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2879,6 +2884,7 @@ dependencies = [
     { name = "kiwisolver" },
     { name = "labmaze" },
     { name = "lerobot" },
+    { name = "libero" },
     { name = "llvmlite" },
     { name = "lxml" },
     { name = "markdown" },
@@ -3147,6 +3153,7 @@ requires-dist = [
     { name = "kiwisolver", specifier = ">=1.4.7" },
     { name = "labmaze", specifier = ">=1.0.6" },
     { name = "lerobot" },
+    { name = "libero", editable = "third_party/libero" },
     { name = "llvmlite", specifier = ">=0.46.0" },
     { name = "lxml", specifier = ">=5.3.0" },
     { name = "markdown", specifier = ">=3.10" },
